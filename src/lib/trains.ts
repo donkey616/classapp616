@@ -38,6 +38,9 @@ export type PlacedTrain = {
   line: string;
   lineName: string;
   color: string;
+  stroke: string;
+  strokeWidth: number;
+  direction: "UP" | "DOWN";
   dest: string;
   destName: string;
   nextStation: string;
@@ -47,6 +50,11 @@ export type PlacedTrain = {
   etaSeconds: number;
   arrivalMs: number;
 };
+
+export function directionStyle(lineColor: string, direction: "UP" | "DOWN"): { color: string; stroke: string; strokeWidth: number } {
+  if (direction === "UP") return { color: lineColor, stroke: "#fffdf8", strokeWidth: 1.5 };
+  return { color: mixHex(lineColor, "#14181c", 0.7), stroke: lineColor, strokeWidth: 3.5 };
+}
 
 export function buildSegments(lines: TrackLine[], stations: TrackStation[]): RouteSegment[] {
   const stationAt = new Map(stations.map((station) => [station.code, station]));
@@ -103,11 +111,15 @@ export function placeTrains(
     if (!segment || segment.length < 30) continue;
     const segmentSeconds = Math.max(MINIMUM_SEGMENT_SECONDS, segment.length / SPEED_METERS_PER_SECOND);
     if (etaSeconds > segmentSeconds) continue;
+    const paint = directionStyle(line.color, report.direction);
     placed.push({
       id: `${line.code}|${from}|${report.station}|${report.dest}|${Math.round(arrivalMs / 1000)}`,
       line: line.code,
       lineName: line.nameZh,
-      color: line.color,
+      color: paint.color,
+      stroke: paint.stroke,
+      strokeWidth: paint.strokeWidth,
+      direction: report.direction,
       dest: report.dest,
       destName: names.get(report.dest) ?? report.dest,
       nextStation: report.station,
@@ -423,6 +435,26 @@ function hongKongTimeMs(value: string | undefined): number | null {
   if (!match) return null;
   const parsed = Date.parse(`${match[1]}T${match[2]}+08:00`);
   return Number.isNaN(parsed) ? null : parsed;
+}
+
+function mixHex(from: string, to: string, amount: number): string {
+  const start = rgb(from);
+  const end = rgb(to);
+  const channel = (left: number, right: number) => Math.round(left + (right - left) * amount);
+  return toHex(channel(start.r, end.r), channel(start.g, end.g), channel(start.b, end.b));
+}
+
+function rgb(hex: string): { r: number; g: number; b: number } {
+  const value = hex.replace("#", "");
+  return {
+    r: Number.parseInt(value.slice(0, 2), 16),
+    g: Number.parseInt(value.slice(2, 4), 16),
+    b: Number.parseInt(value.slice(4, 6), 16),
+  };
+}
+
+function toHex(red: number, green: number, blue: number): string {
+  return `#${[red, green, blue].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function clamp(value: number, low: number, high: number): number {

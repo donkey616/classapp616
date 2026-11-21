@@ -261,10 +261,10 @@ function addNetwork(): void {
     type: "circle",
     source: "trains",
     paint: {
-      "circle-radius": 6.5,
+      "circle-radius": 7,
       "circle-color": ["get", "color"],
-      "circle-stroke-width": 2,
-      "circle-stroke-color": "#fffdf8",
+      "circle-stroke-width": ["get", "strokeWidth"],
+      "circle-stroke-color": ["get", "stroke"],
     },
   }, "stations");
 }
@@ -498,6 +498,8 @@ function animateTrains(): void {
         properties: {
           lineName: train.lineName,
           color: train.color,
+          stroke: train.stroke,
+          strokeWidth: train.strokeWidth,
           destName: train.destName,
           nextName: train.nextName,
           minutes: trainMinutes(train, now),
@@ -529,7 +531,9 @@ function buildLegend(): void {
     item.append(mark, document.createTextNode(line.nameZh));
     list.append(item);
   }
-  legend.replaceChildren(title, list);
+  const note = document.createElement("p");
+  note.textContent = "亮色實心點和深色圓點是同一條綫的兩個方向。";
+  legend.replaceChildren(title, list, note);
 }
 
 function requiredElement<T extends Element>(selector: string): T {

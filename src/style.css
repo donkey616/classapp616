@@ -156,6 +156,11 @@ details li + li {
   color: var(--muted);
 }
 
+#legend p + ul + p {
+  margin: 8px 0 0;
+  line-height: 1.35;
+}
+
 #legend ul {
   list-style: none;
   margin: 0;

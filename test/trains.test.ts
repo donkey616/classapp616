@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSegments, placeTrains, trainCoordinate, type TrackLine, type TrackStation, type TrainReport } from "../src/lib/trains.ts";
+import { buildSegments, directionStyle, placeTrains, trainCoordinate, type TrackLine, type TrackStation, type TrainReport } from "../src/lib/trains.ts";
 
 const stations: TrackStation[] = [
   { code: "A", nameZh: "甲", lon: 114.1, lat: 22.3 },
@@ -22,6 +22,14 @@ const line: TrackLine = {
     [114.12, 22.3],
   ]],
 };
+
+test("opposite directions on one line use different colors", () => {
+  const up = directionStyle("#53B7E8", "UP");
+  const down = directionStyle("#53B7E8", "DOWN");
+  assert.notEqual(up.color.toLowerCase(), down.color.toLowerCase());
+  assert.equal(up.color, "#53B7E8");
+  assert.equal(down.stroke, "#53B7E8");
+});
 
 test("places a train on the curved approach to its next station", () => {
   const now = Date.parse("2026-11-21T10:35:00+08:00");
