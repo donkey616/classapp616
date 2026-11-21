@@ -6,19 +6,29 @@
   "scripts": {
     "data": "node scripts/build-network.mjs && node scripts/build-tracks.mjs",
     "tracks": "node scripts/build-tracks.mjs",
-    "verify": "node scripts/verify-network.mjs && node --experimental-strip-types --test test/*.test.ts",
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
+    "verify": "node scripts/verify-network.mjs && tsx --test test/*.test.ts",
+    "dev": "node scripts/copy-worker.mjs && next dev --hostname 0.0.0.0 --port 4738",
+    "build": "node scripts/copy-worker.mjs && next build && node scripts/migrate.mjs",
+    "start": "next start --hostname 0.0.0.0 --port 4738"
   },
   "engines": {
     "node": ">=22.6.0"
   },
   "devDependencies": {
-    "typescript": "^5.6.3",
-    "vite": "^6.0.3"
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.6.3"
   },
   "dependencies": {
-    "maplibre-gl": "^6.19.0"
+    "@electric-sql/pglite": "^0.5.17",
+    "maplibre-gl": "^6.19.0",
+    "next": "^16.4.6",
+    "pg": "^8.23.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "server-only": "^0.0.1"
   }
 }

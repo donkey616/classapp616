@@ -7,8 +7,9 @@ const body = requiredElement<HTMLElement>("#panel-body");
 const closeButton = requiredElement<HTMLButtonElement>("#panel-close");
 const hint = requiredElement<HTMLElement>("#hint");
 
-export function onClose(handler: () => void): void {
+export function onClose(handler: () => void): () => void {
   closeButton.addEventListener("click", handler);
+  return () => closeButton.removeEventListener("click", handler);
 }
 
 export function hidePanel(): void {
@@ -26,7 +27,7 @@ export function showIntro(): void {
     h("h2", {}, ["怎樣使用"]),
     h("p", {}, ["點選地圖上的車站，查看即將到站的列車。轉車站會按路綫分開列出。"]),
     h("p", {}, ["點選交通快拍點，查看該處最新照片。縮小時快拍點會合成一組，放大後才逐點點選。"]),
-    h("p", {}, ["彩色圓點是行駛中的列車。同一條綫上，亮色實心點和深色圓點是相反方向。位置是用實時到站時間推算的，不是 GPS。"]),
+    h("p", {}, ["彩色圓點是行駛中的列車。同一條綫上，亮色實心點和深色圓點是相反方向。班次大約每分鐘更新一次，所有人看同一份資料。位置是用到站時間沿路軌推算的，不是 GPS。"]),
     h("p", {}, ["某個方向沒有車，或者照片載入失敗時，這裡會直接說明。"]),
   );
 }

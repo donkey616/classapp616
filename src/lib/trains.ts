@@ -140,46 +140,7 @@ export function trainCoordinate(train: PlacedTrain, nowMs: number): [number, num
   return pointAlong(train.coordinates, progress);
 }
 
-export async function fetchTrainReports(
-  pairs: Array<{ line: string; station: string }>,
-  fetchImpl: typeof fetch = fetch,
-): Promise<TrainReport[]> {
-  const reports: TrainReport[] = [];
-  let cursor = 0;
-  async function worker(): Promise<void> {
-    while (cursor < pairs.length) {
-      const pair = pairs[cursor];
-      cursor += 1;
-      const found = await fetchPair(pair.line, pair.station, fetchImpl);
-      reports.push(...found);
-    }
-  }
-  await Promise.all([worker(), worker(), worker(), worker()]);
-  return reports;
-}
-
-async function fetchPair(line: string, station: string, fetchImpl: typeof fetch): Promise<TrainReport[]> {
-  const url = new URL("https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php");
-  url.searchParams.set("line", line);
-  url.searchParams.set("sta", station);
-  url.searchParams.set("lang", "TC");
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const response = await fetchImpl(url);
-      if (response.status === 429 && attempt === 0) {
-        await delay(1200);
-        continue;
-      }
-      if (!response.ok) return [];
-      return reportsFrom(line, station, await response.json());
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
-function reportsFrom(line: string, station: string, payload: unknown): TrainReport[] {
+export function trainReportsFromPayload(line: string, station: string, payload: unknown): TrainReport[] {
   if (!payload || typeof payload !== "object") return [];
   const body = payload as {
     status?: number | string;
@@ -459,10 +420,4 @@ function toHex(red: number, green: number, blue: number): string {
 
 function clamp(value: number, low: number, high: number): number {
   return Math.max(low, Math.min(high, value));
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }

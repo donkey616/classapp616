@@ -7,15 +7,13 @@ import {
   type MapGeoJSONFeature,
   type PointLike,
 } from "maplibre-gl";
-import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 
-setWorkerUrl(workerUrl);
-import "maplibre-gl/dist/maplibre-gl.css";
+setWorkerUrl("/maplibre-gl-worker.mjs");
 import { loadCameras, snapshotUrl, type Camera } from "./lib/cameras";
 import { lineProblem, parseSchedule, type LineView } from "./lib/schedule";
+import { isScheduleSnapshot, type ScheduleSnapshot } from "./lib/schedule-snapshot";
 import {
   buildSegments,
-  fetchTrainReports,
   placeTrains,
   trainCoordinate,
   type PlacedTrain,
@@ -48,10 +46,6 @@ const trainToggle = requiredElement<HTMLButtonElement>("#toggle-trains");
 
 const names = Object.fromEntries(stationNames);
 const routeSegments = buildSegments(network.lines as TrackLine[], network.stations);
-const trainPairs = network.lines.flatMap((line) => line.stationCodes.map((station) => ({
-  line: line.code,
-  station,
-})));
 const stationsByCode = new Map(network.stations.map((station) => [station.code, station]));
 let showMtr = true;
 let showCameras = true;
@@ -63,121 +57,144 @@ let cameraState: "loading" | "ready" | "error" = "loading";
 let cameraCount = 0;
 let skippedCameras = 0;
 let cameraFeatures: Camera[] | null = null;
+let camerasStarted = false;
 let ticket = 0;
 let styleReady = false;
+let mapActive = false;
+let frame = 0;
+let map!: MapLibreMap;
+let snapshot: ScheduleSnapshot | null = null;
+let snapshotTask: Promise<ScheduleSnapshot> | null = null;
 
-generated.textContent = `車站位置讀取於 ${formatHongKong(network.generatedAt)}（香港時間）。`;
-renderSummary();
-buildLegend();
-showIntro();
-
-const map = new MapLibreMap({
-  container: "map",
-  style: "https://tiles.openfreemap.org/styles/positron",
-  center: [114.15, 22.36],
-  zoom: 10,
-  maxZoom: 16,
-  attributionControl: { compact: true },
-  locale: {
-    "NavigationControl.ZoomIn": "放大",
-    "NavigationControl.ZoomOut": "縮小",
-  },
-});
-map.addControl(new NavigationControl({ showCompass: false }), "top-left");
-
-window.setTimeout(() => {
-  if (!styleReady) basemapError.hidden = false;
-}, 12_000);
-
-map.on("load", () => {
-  styleReady = true;
-  basemapError.hidden = true;
-  hideBaseRailways();
-  addNetwork();
-  addCameras();
-  showAll(0);
-  applyVisibility();
-  void refreshTrains();
-  window.setInterval(() => {
-    void refreshTrains();
-  }, 30_000);
-  requestAnimationFrame(animateTrains);
-});
-
-map.on("click", (event) => {
-  const stationHit = firstFeature(event.point, ["stations"]);
-  if (stationHit) {
-    const station = stationsByCode.get(textProperty(stationHit, "code"));
-    if (station) void openStation(station);
-    return;
-  }
-  const trainHit = firstFeature(event.point, ["trains"]);
-  if (trainHit) {
-    ticket += 1;
-    showTrain({
-      lineName: textProperty(trainHit, "lineName"),
-      color: textProperty(trainHit, "color"),
-      destName: textProperty(trainHit, "destName"),
-      nextName: textProperty(trainHit, "nextName"),
-      minutes: textProperty(trainHit, "minutes"),
-    });
-    return;
-  }
-  const cameraHit = firstFeature(event.point, ["cameras"]);
-  if (cameraHit) {
-    openCamera(cameraFromFeature(cameraHit));
-    return;
-  }
-  const cluster = firstFeature(event.point, ["camera-clusters"]);
-  if (cluster) {
-    void expandCluster(cluster);
-    return;
-  }
-  dismissSelection();
-});
-
-map.on("mousemove", (event) => {
-  if (!styleReady) return;
-  const hit = firstFeature(event.point, ["stations", "cameras", "camera-clusters"]);
-  map.getCanvas().style.cursor = hit ? "pointer" : "";
-});
-
-resetButton.addEventListener("click", () => showAll(500));
-mtrToggle.addEventListener("click", () => {
-  showMtr = !showMtr;
-  mtrToggle.setAttribute("aria-pressed", String(showMtr));
-  applyVisibility();
-});
-cameraToggle.addEventListener("click", () => {
-  showCameras = !showCameras;
-  cameraToggle.setAttribute("aria-pressed", String(showCameras));
-  applyVisibility();
-});
-trainToggle.addEventListener("click", () => {
-  showTrains = !showTrains;
-  trainToggle.setAttribute("aria-pressed", String(showTrains));
-  applyVisibility();
+export function mountMap(): () => void {
+  mapActive = true;
+  styleReady = false;
+  generated.textContent = `車站位置讀取於 ${formatHongKong(network.generatedAt)}（香港時間）。`;
   renderSummary();
-  if (showTrains && liveTrains.length === 0) void refreshTrains();
-});
-onClose(() => dismissSelection());
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") dismissSelection();
-});
-
-void loadCameras()
-  .then((result) => {
-    cameraState = "ready";
-    cameraCount = result.cameras.length;
-    skippedCameras = result.skipped;
-    cameraFeatures = result.cameras;
-    addCameras();
-    renderSummary();
-  })
-  .catch(() => {
-    cameraState = "error";
-    renderSummary();
+  buildLegend();
+  showIntro();
+  map = new MapLibreMap({
+    container: "map",
+    style: "https://tiles.openfreemap.org/styles/positron",
+    center: [114.15, 22.36],
+    zoom: 10,
+    maxZoom: 16,
+    attributionControl: { compact: true },
+    locale: {
+      "NavigationControl.ZoomIn": "放大",
+      "NavigationControl.ZoomOut": "縮小",
+    },
   });
+  const current = map;
+  current.addControl(new NavigationControl({ showCompass: false }), "top-left");
+  const basemapTimer = window.setTimeout(() => {
+    if (!styleReady && current === map) basemapError.hidden = false;
+  }, 12_000);
+  current.on("load", () => {
+    if (current !== map) return;
+    styleReady = true;
+    basemapError.hidden = true;
+    hideBaseRailways();
+    addNetwork();
+    addCameras();
+    showAll(0);
+    applyVisibility();
+    void refreshTrains();
+    frame = requestAnimationFrame(animateTrains);
+  });
+  current.on("click", (event) => {
+    if (current !== map) return;
+    const stationHit = firstFeature(event.point, ["stations"]);
+    if (stationHit) {
+      const station = stationsByCode.get(textProperty(stationHit, "code"));
+      if (station) void openStation(station);
+      return;
+    }
+    const trainHit = firstFeature(event.point, ["trains"]);
+    if (trainHit) {
+      ticket += 1;
+      showTrain({
+        lineName: textProperty(trainHit, "lineName"),
+        color: textProperty(trainHit, "color"),
+        destName: textProperty(trainHit, "destName"),
+        nextName: textProperty(trainHit, "nextName"),
+        minutes: textProperty(trainHit, "minutes"),
+      });
+      return;
+    }
+    const cameraHit = firstFeature(event.point, ["cameras"]);
+    if (cameraHit) {
+      openCamera(cameraFromFeature(cameraHit));
+      return;
+    }
+    const cluster = firstFeature(event.point, ["camera-clusters"]);
+    if (cluster) {
+      void expandCluster(cluster);
+      return;
+    }
+    dismissSelection();
+  });
+  current.on("mousemove", (event) => {
+    if (!styleReady || current !== map) return;
+    const hit = firstFeature(event.point, ["stations", "cameras", "camera-clusters"]);
+    current.getCanvas().style.cursor = hit ? "pointer" : "";
+  });
+  const listener = new AbortController();
+  const { signal } = listener;
+  resetButton.addEventListener("click", () => showAll(500), { signal });
+  mtrToggle.addEventListener("click", () => {
+    showMtr = !showMtr;
+    mtrToggle.setAttribute("aria-pressed", String(showMtr));
+    applyVisibility();
+  }, { signal });
+  cameraToggle.addEventListener("click", () => {
+    showCameras = !showCameras;
+    cameraToggle.setAttribute("aria-pressed", String(showCameras));
+    applyVisibility();
+  }, { signal });
+  trainToggle.addEventListener("click", () => {
+    showTrains = !showTrains;
+    trainToggle.setAttribute("aria-pressed", String(showTrains));
+    applyVisibility();
+    renderSummary();
+    if (showTrains && liveTrains.length === 0) void refreshTrains();
+  }, { signal });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") dismissSelection();
+  }, { signal });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void refreshTrains();
+  }, { signal });
+  const stopClose = onClose(() => dismissSelection());
+  const trainTimer = window.setInterval(() => {
+    void refreshTrains();
+  }, 15_000);
+  if (!camerasStarted) {
+    camerasStarted = true;
+    void loadCameras()
+      .then((result) => {
+        cameraState = "ready";
+        cameraCount = result.cameras.length;
+        skippedCameras = result.skipped;
+        cameraFeatures = result.cameras;
+        if (mapActive) addCameras();
+        renderSummary();
+      })
+      .catch(() => {
+        cameraState = "error";
+        renderSummary();
+      });
+  }
+  return () => {
+    mapActive = false;
+    window.clearTimeout(basemapTimer);
+    window.clearInterval(trainTimer);
+    cancelAnimationFrame(frame);
+    listener.abort();
+    stopClose();
+    current.remove();
+  };
+}
 
 function addNetwork(): void {
   if (map.getSource("mtr")) return;
@@ -384,18 +401,30 @@ async function loadLine(lineCode: string, stationCode: string): Promise<LineView
   const line = network.lines.find((item) => item.code === lineCode);
   const name = line?.nameZh ?? lineCode;
   const color = line?.color ?? "#1c1915";
-  const url = new URL("https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php");
-  url.searchParams.set("line", lineCode);
-  url.searchParams.set("sta", stationCode);
-  url.searchParams.set("lang", "TC");
   try {
-    const response = await fetch(url);
-    if (response.status === 429) return lineProblem(lineCode, name, color, "港鐵查詢過於頻密，請稍候再試。");
-    if (!response.ok) return lineProblem(lineCode, name, color, "暫時連不上港鐵到站服務，請稍後再試。");
-    return parseSchedule(lineCode, name, color, stationCode, await response.json(), names);
+    const data = await loadSnapshot();
+    const payload = data.stations[`${lineCode}-${stationCode}`];
+    if (!payload) return lineProblem(lineCode, name, color, "這個站暫時沒有班次資料。");
+    return parseSchedule(lineCode, name, color, stationCode, payload, names);
   } catch {
-    return lineProblem(lineCode, name, color, "暫時連不上港鐵到站服務，請稍後再試。");
+    return lineProblem(lineCode, name, color, "暫時連不上到站服務，請稍後再試。");
   }
+}
+
+function loadSnapshot(): Promise<ScheduleSnapshot> {
+  if (snapshot && snapshot.freshUntil > Date.now()) return Promise.resolve(snapshot);
+  if (!snapshotTask) {
+    snapshotTask = fetch("/api/schedules", { cache: "no-store" }).then(async (response) => {
+      if (!response.ok) throw new Error("schedule unavailable");
+      const body: unknown = await response.json();
+      if (!isScheduleSnapshot(body)) throw new Error("schedule unavailable");
+      snapshot = body;
+      return body;
+    }).finally(() => {
+      snapshotTask = null;
+    });
+  }
+  return snapshotTask;
 }
 
 function focusPoint(longitude: number, latitude: number): void {
@@ -473,14 +502,14 @@ function trainSummary(): string {
 }
 
 async function refreshTrains(): Promise<void> {
-  if (!showTrains || trainPolling) return;
+  if (!showTrains || trainPolling || document.visibilityState === "hidden") return;
   trainPolling = true;
   try {
-    const reports = await fetchTrainReports(trainPairs);
-    liveTrains = placeTrains(network.lines as TrackLine[], network.stations, routeSegments, reports, Date.now());
+    const data = await loadSnapshot();
+    liveTrains = placeTrains(network.lines as TrackLine[], network.stations, routeSegments, data.reports, Date.now());
     trainState = "ready";
   } catch {
-    trainState = "error";
+    if (!snapshot) trainState = "error";
   } finally {
     trainPolling = false;
     renderSummary();
@@ -488,6 +517,7 @@ async function refreshTrains(): Promise<void> {
 }
 
 function animateTrains(): void {
+  if (!mapActive) return;
   const source = map.getSource("trains");
   if (source instanceof GeoJSONSource && showTrains && showMtr) {
     const now = Date.now();
@@ -508,7 +538,7 @@ function animateTrains(): void {
       })),
     });
   }
-  requestAnimationFrame(animateTrains);
+  frame = requestAnimationFrame(animateTrains);
 }
 
 function trainMinutes(train: PlacedTrain, nowMs: number): string {

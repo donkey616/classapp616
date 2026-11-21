@@ -1,5 +1,7 @@
 node_modules
 dist
+.next
+public/maplibre-gl-worker.mjs
 .DS_Store
 *.local
 .wrangler
