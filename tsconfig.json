@@ -24,7 +24,11 @@
         "name": "next"
       }
     ],
-    "incremental": true
+    "incremental": true,
+    "baseUrl": ".",
+    "paths": {
+      "@hk/database-store": ["./src/lib/database-store.ts"]
+    }
   },
   "include": [
     "next-env.d.ts",

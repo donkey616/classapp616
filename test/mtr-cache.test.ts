@@ -4,7 +4,7 @@ import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { loadSchedules, memoryStore, type SweepResult } from "../src/lib/mtr-cache.ts";
 import { createScheduleStore } from "../src/lib/mtr-store.ts";
-import { fetchNetwork, scheduleUrl, type Pair } from "../src/lib/mtr-upstream.ts";
+import { fetchNetwork, nextScheduleBatch, scheduleUrl, type Pair } from "../src/lib/mtr-upstream.ts";
 import type { ScheduleSnapshot } from "../src/lib/schedule-snapshot.ts";
 
 const started = 1_700_000_000_000;
@@ -84,6 +84,50 @@ test("schedule requests stay on the MTR host", () => {
   assert.equal(url.searchParams.get("sta"), "CEN");
   assert.throws(() => scheduleUrl({ line: "ISL", station: "https://evil.example" }));
   assert.throws(() => scheduleUrl({ line: "../", station: "CEN" }));
+});
+
+test("a short hold is not stretched into a full minute", async () => {
+  const store = memoryStore();
+  let clock = started;
+  const served = await loadSchedules({
+    store,
+    now: () => clock,
+    sleep: async () => {},
+    loadFresh: async () => ({ kind: "ok", holdMs: 0, snapshot: snapshot(clock) }),
+  });
+  assert.equal(served?.freshUntil, clock);
+  clock += 1;
+  let fetches = 0;
+  await loadSchedules({
+    store,
+    now: () => clock,
+    sleep: async () => {},
+    loadFresh: async () => {
+      fetches += 1;
+      return ok(clock);
+    },
+  });
+  assert.equal(fetches, 1);
+});
+
+test("a worker-sized batch keeps unfinished stations for the next call", async () => {
+  const pairs: Pair[] = ["CEN", "ADM", "WAC"].map((station) => ({ line: "ISL", station }));
+  const calls: string[] = [];
+  const fetchImpl: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    calls.push(url.searchParams.get("sta") ?? "");
+    return Response.json({ status: 1, data: {} });
+  };
+  const first = await nextScheduleBatch(pairs, null, fetchImpl, 2);
+  assert.equal(first.kind, "ok");
+  if (first.kind !== "ok") return;
+  assert.equal(first.snapshot.complete, false);
+  assert.equal(Object.keys(first.snapshot.stations).length, 2);
+  const second = await nextScheduleBatch(pairs, first.snapshot, fetchImpl, 2);
+  assert.equal(second.kind, "ok");
+  if (second.kind !== "ok") return;
+  assert.equal(second.snapshot.complete, true);
+  assert.deepEqual(calls, ["CEN", "ADM", "WAC"]);
 });
 
 test("a rate limit stops the sweep instead of calling every station", async () => {

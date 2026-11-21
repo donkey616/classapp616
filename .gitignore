@@ -5,3 +5,5 @@ public/maplibre-gl-worker.mjs
 .DS_Store
 *.local
 .wrangler
+.open-next
+.dev.vars

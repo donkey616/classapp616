@@ -9,7 +9,8 @@
     "verify": "node scripts/verify-network.mjs && tsx --test test/*.test.ts",
     "dev": "node scripts/copy-worker.mjs && next dev --hostname 0.0.0.0 --port 4738",
     "build": "node scripts/copy-worker.mjs && next build && node scripts/migrate.mjs",
-    "start": "next start --hostname 0.0.0.0 --port 4738"
+    "start": "next start --hostname 0.0.0.0 --port 4738",
+    "deploy:cf": "CF_DEPLOY=1 opennextjs-cloudflare build && opennextjs-cloudflare deploy"
   },
   "engines": {
     "node": ">=22.6.0"
@@ -20,10 +21,12 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "tsx": "^4.23.15",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "wrangler": "^4.166.0"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.17",
+    "@opennextjs/cloudflare": "^1.20.18",
     "maplibre-gl": "^6.19.0",
     "next": "^16.4.6",
     "pg": "^8.23.1",

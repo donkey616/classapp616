@@ -22,6 +22,36 @@ export function scheduleUrl(pair: Pair): URL {
   return url;
 }
 
+const WORKER_BATCH = 40;
+
+export async function nextScheduleBatch(
+  pairs: Pair[],
+  existing: ScheduleSnapshot | null,
+  fetchImpl: typeof fetch,
+  batchSize = pairs.length,
+): Promise<SweepResult> {
+  const have = new Set(Object.keys(existing?.stations ?? {}));
+  const remaining = pairs.filter((pair) => !have.has(`${pair.line}-${pair.station}`));
+  const batch = remaining.slice(0, Math.max(1, batchSize));
+  if (batch.length === 0 && existing) {
+    return { kind: "ok", holdMs: FRESH_MS, snapshot: { ...existing, complete: true } };
+  }
+  const paced = batch.length > WORKER_BATCH;
+  const swept = await fetchNetwork(batch, fetchImpl, paced ? { workers: 4 } : { gapMs: 0, workers: 4 });
+  if (swept.kind === "limited") return swept;
+  const stations = { ...(existing?.stations ?? {}), ...swept.snapshot.stations };
+  const reports = Object.entries(stations).flatMap(([key, payload]) => {
+    const split = key.indexOf("-");
+    return trainReportsFromPayload(key.slice(0, split), key.slice(split + 1), payload);
+  });
+  const complete = pairs.length === 0 || Object.keys(stations).length >= pairs.length * 0.8;
+  return {
+    kind: "ok",
+    holdMs: complete ? Math.max(FRESH_MS, swept.holdMs) : 0,
+    snapshot: { fetchedAt: Date.now(), freshUntil: Date.now(), reports, stations, complete },
+  };
+}
+
 export async function fetchNetwork(
   pairs: Pair[],
   fetchImpl: typeof fetch,

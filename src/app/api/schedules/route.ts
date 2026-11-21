@@ -16,7 +16,10 @@ export async function GET(request: Request): Promise<Response> {
     if (!snapshot) {
       return Response.json({ error: "港鐵到站服務暫時忙碌，請稍後再試。" }, { status: 503, headers: QUIET });
     }
-    return Response.json(snapshot, { headers: QUIET });
+    const headers = process.env.CURSOR_APP_ID || snapshot.complete === false
+      ? QUIET
+      : { "cache-control": "public, s-maxage=60, max-age=15" };
+    return Response.json(snapshot, { headers });
   } catch {
     return Response.json({ error: "暫時無法讀取到站班次。" }, { status: 503, headers: QUIET });
   }

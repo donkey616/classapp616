@@ -74,7 +74,7 @@ export async function loadSchedules(args: {
   try {
     const sweep = await args.loadFresh();
     if (sweep.kind === "ok") {
-      const freshUntil = now() + clampHold(sweep.holdMs);
+      const freshUntil = now() + capHold(sweep.holdMs);
       const snapshot = { ...sweep.snapshot, freshUntil };
       await args.store.save(snapshot, freshUntil);
       return snapshot;
@@ -89,6 +89,11 @@ export async function loadSchedules(args: {
     }
     return existing?.snapshot ?? (await args.store.read())?.snapshot ?? null;
   }
+}
+
+function capHold(ms: number): number {
+  if (!Number.isFinite(ms) || ms < 0) return FRESH_MS;
+  return Math.min(MAX_HOLD_MS, ms);
 }
 
 function clampHold(ms: number): number {

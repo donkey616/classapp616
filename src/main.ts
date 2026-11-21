@@ -65,6 +65,7 @@ let frame = 0;
 let map!: MapLibreMap;
 let snapshot: ScheduleSnapshot | null = null;
 let snapshotTask: Promise<ScheduleSnapshot> | null = null;
+let scheduleContinuations = 0;
 
 export function mountMap(): () => void {
   mapActive = true;
@@ -419,6 +420,15 @@ function loadSnapshot(): Promise<ScheduleSnapshot> {
       const body: unknown = await response.json();
       if (!isScheduleSnapshot(body)) throw new Error("schedule unavailable");
       snapshot = body;
+      if (body.complete === false && scheduleContinuations < 4) {
+        scheduleContinuations += 1;
+        window.setTimeout(() => {
+          snapshot = null;
+          void refreshTrains();
+        }, 300);
+      } else if (body.complete !== false) {
+        scheduleContinuations = 0;
+      }
       return body;
     }).finally(() => {
       snapshotTask = null;

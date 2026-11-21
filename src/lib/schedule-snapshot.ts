@@ -5,6 +5,7 @@ export type ScheduleSnapshot = {
   freshUntil: number;
   reports: TrainReport[];
   stations: Record<string, unknown>;
+  complete?: boolean;
 };
 
 export function isScheduleSnapshot(value: unknown): value is ScheduleSnapshot {

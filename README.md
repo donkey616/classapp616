@@ -52,3 +52,13 @@ npm start
 ```
 
 `npm start` 同樣使用連接埠 **4738**。
+
+## Cloudflare Workers
+
+需要已登入的 Cloudflare 帳戶。第一次在自己的電腦執行 `npx wrangler login`。
+
+```bash
+npm run deploy:cf
+```
+
+Workers 免費方案每次最多大約 50 個對外請求，所以整張網絡會分成幾批收集，收集完成後同樣共用約 60 秒。Cursor 上的正式版仍用自己的 Postgres，不受這次部署影響。
