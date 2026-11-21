@@ -143,7 +143,7 @@ function addNetwork(): void {
     data: {
       type: "FeatureCollection",
       features: network.lines.flatMap((line) =>
-        line.paths.map((coordinates) => ({
+        (line.tracks?.length ? line.tracks : line.paths).map((coordinates) => ({
           type: "Feature" as const,
           properties: { color: line.color, name: line.nameZh },
           geometry: { type: "LineString" as const, coordinates },

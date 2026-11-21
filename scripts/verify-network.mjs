@@ -71,6 +71,41 @@ for (const line of network.lines) {
   sameSet(drawnStops, new Set(line.stationCodes), `${line.code} 車站`);
 }
 
+function distanceToPath(point, path) {
+  let best = Infinity;
+  for (let index = 1; index < path.length; index += 1) {
+    const start = path[index - 1];
+    const end = path[index];
+    const lat = point[1] * (Math.PI / 180);
+    const ox = point[0] * 111_320 * Math.cos(lat);
+    const oy = point[1] * 110_540;
+    const ax = start[0] * 111_320 * Math.cos(lat) - ox;
+    const ay = start[1] * 110_540 - oy;
+    const bx = end[0] * 111_320 * Math.cos(lat) - ox;
+    const by = end[1] * 110_540 - oy;
+    const lengthSquared = (bx - ax) ** 2 + (by - ay) ** 2;
+    const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, -(ax * (bx - ax) + ay * (by - ay)) / lengthSquared));
+    best = Math.min(best, Math.hypot(ax + (bx - ax) * t, ay + (by - ay) * t));
+  }
+  return best;
+}
+
+for (const line of network.lines) {
+  if (!Array.isArray(line.tracks) || line.tracks.length === 0) throw new Error(`${line.code} 缺少彎線路軌`);
+  const pointCount = line.tracks.reduce((total, track) => total + track.length, 0);
+  if (pointCount <= line.stationCodes.length) throw new Error(`${line.code} 路軌點數不足以形成彎線`);
+  for (const code of line.stationCodes) {
+    const station = stations.get(code);
+    const gap = Math.min(...line.tracks.map((track) => distanceToPath([station.lon, station.lat], track)));
+    if (gap > 350) throw new Error(`${line.code} ${code} 距離路軌 ${Math.round(gap)} 米`);
+    if (trackOutsideHongKong(line.tracks)) throw new Error(`${line.code} 路軌超出香港範圍`);
+  }
+}
+
+function trackOutsideHongKong(tracks) {
+  return tracks.some((track) => track.some(([lon, lat]) => lat < 22.1 || lat > 22.6 || lon < 113.8 || lon > 114.5));
+}
+
 if (!network.generatedAt || Number.isNaN(Date.parse(network.generatedAt))) {
   throw new Error("缺少讀取時間");
 }

@@ -14,6 +14,7 @@ export type RailLine = {
   nameZh: string;
   color: string;
   paths: number[][][];
+  tracks?: number[][][];
 };
 
 type NetworkFile = {
