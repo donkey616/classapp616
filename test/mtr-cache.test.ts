@@ -110,6 +110,26 @@ test("a short hold is not stretched into a full minute", async () => {
   assert.equal(fetches, 1);
 });
 
+test("a small batch takes stations from every line", async () => {
+  const pairs: Pair[] = [
+    { line: "ISL", station: "CEN" },
+    { line: "ISL", station: "ADM" },
+    { line: "DRL", station: "DIS" },
+    { line: "DRL", station: "SUN" },
+  ];
+  const called: string[] = [];
+  const fetchImpl: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    called.push(`${url.searchParams.get("line")}-${url.searchParams.get("sta")}`);
+    return Response.json({ status: 1, data: {} });
+  };
+  const first = await nextScheduleBatch(pairs, null, fetchImpl, 2);
+  assert.equal(first.kind, "ok");
+  if (first.kind !== "ok") return;
+  assert.deepEqual(Object.keys(first.snapshot.stations).sort(), ["DRL-DIS", "ISL-CEN"]);
+  assert.deepEqual(called.sort(), ["DRL-DIS", "ISL-CEN"]);
+});
+
 test("a worker-sized batch keeps unfinished stations for the next call", async () => {
   const pairs: Pair[] = ["CEN", "ADM", "WAC"].map((station) => ({ line: "ISL", station }));
   const calls: string[] = [];

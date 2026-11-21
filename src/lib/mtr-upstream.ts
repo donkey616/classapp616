@@ -24,6 +24,30 @@ export function scheduleUrl(pair: Pair): URL {
 
 const WORKER_BATCH = 40;
 
+function takeBatch(pairs: Pair[], have: Set<string>, batchSize: number): Pair[] {
+  const remaining = pairs.filter((pair) => !have.has(`${pair.line}-${pair.station}`));
+  if (remaining.length <= batchSize) return remaining;
+  const queues = new Map<string, Pair[]>();
+  for (const pair of remaining) {
+    const queue = queues.get(pair.line) ?? [];
+    queue.push(pair);
+    queues.set(pair.line, queue);
+  }
+  const batch: Pair[] = [];
+  while (batch.length < batchSize) {
+    let progressed = false;
+    for (const queue of queues.values()) {
+      const next = queue.shift();
+      if (!next) continue;
+      batch.push(next);
+      progressed = true;
+      if (batch.length >= batchSize) break;
+    }
+    if (!progressed) break;
+  }
+  return batch;
+}
+
 export async function nextScheduleBatch(
   pairs: Pair[],
   existing: ScheduleSnapshot | null,
@@ -31,8 +55,7 @@ export async function nextScheduleBatch(
   batchSize = pairs.length,
 ): Promise<SweepResult> {
   const have = new Set(Object.keys(existing?.stations ?? {}));
-  const remaining = pairs.filter((pair) => !have.has(`${pair.line}-${pair.station}`));
-  const batch = remaining.slice(0, Math.max(1, batchSize));
+  const batch = takeBatch(pairs, have, batchSize);
   if (batch.length === 0 && existing) {
     return { kind: "ok", holdMs: FRESH_MS, snapshot: { ...existing, complete: true } };
   }

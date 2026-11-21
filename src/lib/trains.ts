@@ -49,6 +49,7 @@ export type PlacedTrain = {
   length: number;
   etaSeconds: number;
   arrivalMs: number;
+  departing: boolean;
 };
 
 export function directionStyle(lineColor: string, direction: "UP" | "DOWN"): { color: string; stroke: string; strokeWidth: number } {
@@ -103,17 +104,25 @@ export function placeTrains(
     if (arrivalMs == null) continue;
     const etaSeconds = (arrivalMs - nowMs) / 1000;
     if (etaSeconds < -20) continue;
-    const from = incomingStation(report.station, report.dest, line, neighbors);
-    if (!from) continue;
-    const forward = segmentAt.get(`${line.code}|${from}|${report.station}`);
-    const backward = segmentAt.get(`${line.code}|${report.station}|${from}`);
+    const approach = incomingStation(report.station, report.dest, line, neighbors);
+    const departure = approach ? null : outgoingStation(report.station, report.dest, line);
+    const from = approach ?? report.station;
+    const toward = approach ? report.station : departure;
+    if (!toward) continue;
+    const forward = segmentAt.get(`${line.code}|${from}|${toward}`);
+    const backward = segmentAt.get(`${line.code}|${toward}|${from}`);
     const segment = forward ?? (backward ? { ...backward, coordinates: [...backward.coordinates].reverse() } : null);
     if (!segment || segment.length < 30) continue;
     const segmentSeconds = Math.max(MINIMUM_SEGMENT_SECONDS, segment.length / SPEED_METERS_PER_SECOND);
-    if (etaSeconds > segmentSeconds) continue;
+    const departing = approach == null;
+    if (departing) {
+      if (etaSeconds > segmentSeconds || etaSeconds < -segmentSeconds) continue;
+    } else if (etaSeconds > segmentSeconds) {
+      continue;
+    }
     const paint = directionStyle(line.color, report.direction);
     placed.push({
-      id: `${line.code}|${from}|${report.station}|${report.dest}|${Math.round(arrivalMs / 1000)}`,
+      id: `${line.code}|${from}|${toward}|${report.dest}|${Math.round(arrivalMs / 1000)}`,
       line: line.code,
       lineName: line.nameZh,
       color: paint.color,
@@ -122,12 +131,13 @@ export function placeTrains(
       direction: report.direction,
       dest: report.dest,
       destName: names.get(report.dest) ?? report.dest,
-      nextStation: report.station,
-      nextName: names.get(report.station) ?? report.station,
+      nextStation: toward,
+      nextName: names.get(toward) ?? toward,
       coordinates: segment.coordinates,
       length: segment.length,
       etaSeconds,
       arrivalMs,
+      departing,
     });
   }
   return placed;
@@ -136,6 +146,10 @@ export function placeTrains(
 export function trainCoordinate(train: PlacedTrain, nowMs: number): [number, number] {
   const etaSeconds = train.etaSeconds - (nowMs - (train.arrivalMs - train.etaSeconds * 1000)) / 1000;
   const segmentSeconds = Math.max(MINIMUM_SEGMENT_SECONDS, train.length / SPEED_METERS_PER_SECOND);
+  if (train.departing) {
+    const progress = etaSeconds > 0 ? 0.03 : clamp(-etaSeconds / segmentSeconds, 0.03, 0.97);
+    return pointAlong(train.coordinates, progress);
+  }
   const progress = clamp(1 - etaSeconds / segmentSeconds, 0.03, 0.97);
   return pointAlong(train.coordinates, progress);
 }
@@ -172,6 +186,16 @@ function incomingStation(station: string, dest: string, line: TrackLine, neighbo
   if (candidates.length === 0) return incomingFromSequence(station, dest, line);
   const alongDestination = line.sequences.filter((sequence) => sequence.includes(dest) && sequence.includes(station));
   return candidates.find((next) => alongDestination.some((sequence) => sequence.includes(next))) ?? candidates[0];
+}
+
+function outgoingStation(station: string, dest: string, line: TrackLine): string | null {
+  const sequence = line.sequences.find((item) => item.includes(station) && item.includes(dest));
+  if (!sequence) return null;
+  const index = sequence.indexOf(station);
+  const destIndex = sequence.indexOf(dest);
+  const next = destIndex >= index ? index + 1 : index - 1;
+  if (next < 0 || next >= sequence.length) return null;
+  return sequence[next];
 }
 
 function incomingFromSequence(station: string, dest: string, line: TrackLine): string | null {

@@ -73,6 +73,36 @@ test("keeps the train on the bowed track instead of the straight shortcut", () =
   assert.ok(point[1] > 22.302, `train lat ${point[1]} fell onto the straight shortcut`);
 });
 
+test("shows a shuttle waiting at the terminus instead of leaving the line empty", () => {
+  const shuttleStations: TrackStation[] = [
+    { code: "DIS", nameZh: "迪士尼", lon: 114.04, lat: 22.31 },
+    { code: "SUN", nameZh: "欣澳", lon: 114.03, lat: 22.33 },
+  ];
+  const shuttle: TrackLine = {
+    code: "DRL",
+    nameZh: "迪士尼綫",
+    color: "#F173AC",
+    sequences: [["DIS", "SUN"]],
+    extraSegments: [],
+    tracks: [[
+      [114.04, 22.31],
+      [114.035, 22.32],
+      [114.03, 22.33],
+    ]],
+  };
+  const now = Date.parse("2026-11-21T15:28:00+08:00");
+  const segments = buildSegments([shuttle], shuttleStations);
+  const placed = placeTrains([shuttle], shuttleStations, segments, [
+    { line: "DRL", station: "DIS", direction: "UP", dest: "SUN", arrival: "2026-11-21 15:29:00" },
+    { line: "DRL", station: "SUN", direction: "DOWN", dest: "DIS", arrival: "2026-11-21 15:40:00" },
+  ], now);
+  assert.equal(placed.length, 1);
+  assert.equal(placed[0].nextStation, "SUN");
+  assert.equal(placed[0].departing, true);
+  const point = trainCoordinate(placed[0], now);
+  assert.ok(Math.abs(point[0] - 114.04) < 0.002);
+});
+
 test("does not draw the same train again at a station it has not reached", () => {
   const now = Date.parse("2026-11-21T10:35:00+08:00");
   const segments = buildSegments([line], stations);
