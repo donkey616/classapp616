@@ -15,6 +15,9 @@ export type RailLine = {
   color: string;
   paths: number[][][];
   tracks?: number[][][];
+  sequences: string[][];
+  extraSegments: string[][];
+  stationCodes: string[];
 };
 
 type NetworkFile = {

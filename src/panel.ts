@@ -26,6 +26,7 @@ export function showIntro(): void {
     h("h2", {}, ["怎樣使用"]),
     h("p", {}, ["點選地圖上的車站，查看即將到站的列車。轉車站會按路綫分開列出。"]),
     h("p", {}, ["點選交通快拍點，查看該處最新照片。縮小時快拍點會合成一組，放大後才逐點點選。"]),
+    h("p", {}, ["彩色圓點是行駛中的列車，會沿路軌移動。位置是用實時到站時間推算的，不是 GPS。"]),
     h("p", {}, ["某個方向沒有車，或者照片載入失敗時，這裡會直接說明。"]),
   );
 }
@@ -47,6 +48,23 @@ export function showStation(
     stationHeading(station, names),
     ...blocks,
     h("div", { class: "actions" }, [button("重新查詢", onRefresh)]),
+  );
+}
+
+export function showTrain(train: {
+  lineName: string;
+  color: string;
+  destName: string;
+  nextName: string;
+  minutes: string;
+}): void {
+  open();
+  body.replaceChildren(
+    h("h2", {}, [`${train.lineName}列車`]),
+    lineName(train.color, `往${train.destName}`),
+    h("p", {}, [`下一個站：${train.nextName}`]),
+    h("p", { class: "when" }, [train.minutes]),
+    h("p", { class: "quiet" }, ["這是按實時到站時間沿路軌推算的位置，不是港鐵提供的 GPS。"]),
   );
 }
 

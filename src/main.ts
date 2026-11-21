@@ -13,8 +13,16 @@ setWorkerUrl(workerUrl);
 import "maplibre-gl/dist/maplibre-gl.css";
 import { loadCameras, snapshotUrl, type Camera } from "./lib/cameras";
 import { lineProblem, parseSchedule, type LineView } from "./lib/schedule";
+import {
+  buildSegments,
+  fetchTrainReports,
+  placeTrains,
+  trainCoordinate,
+  type PlacedTrain,
+  type TrackLine,
+} from "./lib/trains";
 import { lineDirectory, network, stationNames, type Station } from "./network";
-import { hidePanel, onClose, showCamera, showIntro, showStation, showStationPending } from "./panel";
+import { hidePanel, onClose, showCamera, showIntro, showStation, showStationPending, showTrain } from "./panel";
 import "./style.css";
 
 const HIDDEN_RAIL_LAYERS = [
@@ -27,6 +35,7 @@ const HIDDEN_RAIL_LAYERS = [
 ];
 
 const MTR_LAYERS = ["mtr-casing", "mtr-line", "stations", "station-labels"];
+const TRAIN_LAYERS = ["trains"];
 const CAMERA_LAYERS = ["camera-clusters", "camera-count", "cameras"];
 
 const summary = requiredElement<HTMLElement>("#summary");
@@ -35,11 +44,21 @@ const basemapError = requiredElement<HTMLElement>("#basemap-error");
 const resetButton = requiredElement<HTMLButtonElement>("#reset");
 const mtrToggle = requiredElement<HTMLButtonElement>("#toggle-mtr");
 const cameraToggle = requiredElement<HTMLButtonElement>("#toggle-cameras");
+const trainToggle = requiredElement<HTMLButtonElement>("#toggle-trains");
 
 const names = Object.fromEntries(stationNames);
+const routeSegments = buildSegments(network.lines as TrackLine[], network.stations);
+const trainPairs = network.lines.flatMap((line) => line.stationCodes.map((station) => ({
+  line: line.code,
+  station,
+})));
 const stationsByCode = new Map(network.stations.map((station) => [station.code, station]));
 let showMtr = true;
 let showCameras = true;
+let showTrains = true;
+let trainState: "loading" | "ready" | "error" = "loading";
+let liveTrains: PlacedTrain[] = [];
+let trainPolling = false;
 let cameraState: "loading" | "ready" | "error" = "loading";
 let cameraCount = 0;
 let skippedCameras = 0;
@@ -78,6 +97,11 @@ map.on("load", () => {
   addCameras();
   showAll(0);
   applyVisibility();
+  void refreshTrains();
+  window.setInterval(() => {
+    void refreshTrains();
+  }, 30_000);
+  requestAnimationFrame(animateTrains);
 });
 
 map.on("click", (event) => {
@@ -85,6 +109,18 @@ map.on("click", (event) => {
   if (stationHit) {
     const station = stationsByCode.get(textProperty(stationHit, "code"));
     if (station) void openStation(station);
+    return;
+  }
+  const trainHit = firstFeature(event.point, ["trains"]);
+  if (trainHit) {
+    ticket += 1;
+    showTrain({
+      lineName: textProperty(trainHit, "lineName"),
+      color: textProperty(trainHit, "color"),
+      destName: textProperty(trainHit, "destName"),
+      nextName: textProperty(trainHit, "nextName"),
+      minutes: textProperty(trainHit, "minutes"),
+    });
     return;
   }
   const cameraHit = firstFeature(event.point, ["cameras"]);
@@ -116,6 +152,13 @@ cameraToggle.addEventListener("click", () => {
   showCameras = !showCameras;
   cameraToggle.setAttribute("aria-pressed", String(showCameras));
   applyVisibility();
+});
+trainToggle.addEventListener("click", () => {
+  showTrains = !showTrains;
+  trainToggle.setAttribute("aria-pressed", String(showTrains));
+  applyVisibility();
+  renderSummary();
+  if (showTrains && liveTrains.length === 0) void refreshTrains();
 });
 onClose(() => dismissSelection());
 document.addEventListener("keydown", (event) => {
@@ -179,6 +222,10 @@ function addNetwork(): void {
       })),
     },
   });
+  map.addSource("trains", {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
   map.addLayer({
     id: "stations",
     type: "circle",
@@ -209,6 +256,17 @@ function addNetwork(): void {
       "text-halo-width": 1.3,
     },
   });
+  map.addLayer({
+    id: "trains",
+    type: "circle",
+    source: "trains",
+    paint: {
+      "circle-radius": 6.5,
+      "circle-color": ["get", "color"],
+      "circle-stroke-width": 2,
+      "circle-stroke-color": "#fffdf8",
+    },
+  }, "stations");
 }
 
 function addCameras(): void {
@@ -287,6 +345,10 @@ function applyVisibility(): void {
   }
   for (const id of CAMERA_LAYERS) {
     if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", cameraVisibility);
+  }
+  const trainVisibility = showTrains && showMtr ? "visible" : "none";
+  for (const id of TRAIN_LAYERS) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", trainVisibility);
   }
 }
 
@@ -398,7 +460,59 @@ function renderSummary(): void {
     return;
   }
   const skipped = skippedCameras > 0 ? `，另外 ${skippedCameras} 筆缺了座標，沒有放上地圖` : "";
-  summary.textContent = `${stations} · ${cameraCount} 個交通快拍點${skipped}`;
+  const trains = trainSummary();
+  summary.textContent = `${stations} · ${cameraCount} 個交通快拍點${skipped}${trains}`;
+}
+
+function trainSummary(): string {
+  if (!showTrains) return "";
+  if (trainState === "loading") return "。正在用實時到站時間推算列車位置…";
+  if (trainState === "error") return "。暫時無法推算列車位置。";
+  if (liveTrains.length === 0) return "。暫時沒有可顯示的行駛中列車。";
+  return `。地圖上有 ${liveTrains.length} 班行駛中的列車，位置按到站時間沿路軌推算。`;
+}
+
+async function refreshTrains(): Promise<void> {
+  if (!showTrains || trainPolling) return;
+  trainPolling = true;
+  try {
+    const reports = await fetchTrainReports(trainPairs);
+    liveTrains = placeTrains(network.lines as TrackLine[], network.stations, routeSegments, reports, Date.now());
+    trainState = "ready";
+  } catch {
+    trainState = "error";
+  } finally {
+    trainPolling = false;
+    renderSummary();
+  }
+}
+
+function animateTrains(): void {
+  const source = map.getSource("trains");
+  if (source instanceof GeoJSONSource && showTrains && showMtr) {
+    const now = Date.now();
+    source.setData({
+      type: "FeatureCollection",
+      features: liveTrains.map((train) => ({
+        type: "Feature" as const,
+        properties: {
+          lineName: train.lineName,
+          color: train.color,
+          destName: train.destName,
+          nextName: train.nextName,
+          minutes: trainMinutes(train, now),
+        },
+        geometry: { type: "Point" as const, coordinates: trainCoordinate(train, now) },
+      })),
+    });
+  }
+  requestAnimationFrame(animateTrains);
+}
+
+function trainMinutes(train: PlacedTrain, nowMs: number): string {
+  const etaSeconds = train.etaSeconds - (nowMs - (train.arrivalMs - train.etaSeconds * 1000)) / 1000;
+  if (etaSeconds <= 30) return "即將到站";
+  return `約 ${Math.max(1, Math.round(etaSeconds / 60))} 分鐘`;
 }
 
 function buildLegend(): void {

@@ -163,15 +163,15 @@ function toRow(train: TrainPayload, names: Record<string, string>, currentTime: 
 const HONG_KONG_OFFSET = "+08:00";
 
 export function arrivalText(trainTime: string | undefined, currentTime: string | undefined): string {
-  const trainMs = parseHongKongTime(trainTime);
-  const currentMs = parseHongKongTime(currentTime);
+  const trainMs = hongKongTimeMs(trainTime);
+  const currentMs = hongKongTimeMs(currentTime);
   if (trainMs == null || currentMs == null) return "時間未提供";
   const minutes = Math.round((trainMs - currentMs) / 60_000);
   if (minutes <= 0) return "即將到站";
   return `約 ${minutes} 分鐘`;
 }
 
-function parseHongKongTime(value: string | undefined): number | null {
+export function hongKongTimeMs(value: string | undefined): number | null {
   if (!value || value === "-") return null;
   const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})$/);
   if (!match) return null;
@@ -180,7 +180,7 @@ function parseHongKongTime(value: string | undefined): number | null {
 }
 
 function usableStamp(value: string | undefined): string | null {
-  return parseHongKongTime(value) == null ? null : value!.trim();
+  return hongKongTimeMs(value) == null ? null : value!.trim();
 }
 
 function clockStamp(value: string | undefined): string | null {
