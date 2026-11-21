@@ -255,20 +255,22 @@ function rememberEdge(edges: Map<string, [string, string]>, left: string, right:
 }
 
 function sliceTrack(tracks: number[][][], start: number[], end: number[]): number[][] {
+  const straight = metersBetween(start, end);
   let best: { track: number[][]; startChain: number; endChain: number; score: number } | null = null;
   for (const track of tracks) {
-    const projectedStart = project(track, start);
-    const projectedEnd = project(track, end);
-    if (!projectedStart || !projectedEnd) continue;
-    const along = Math.abs(projectedStart.chainage - projectedEnd.chainage);
-    if (along < 40 || along > 12_000) continue;
-    if (projectedStart.offset > 450 || projectedEnd.offset > 450) continue;
-    const score = projectedStart.offset + projectedEnd.offset;
-    if (!best || score < best.score) {
-      best = { track, startChain: projectedStart.chainage, endChain: projectedEnd.chainage, score };
+    for (const projectedStart of approaches(track, start)) {
+      for (const projectedEnd of approaches(track, end)) {
+        const along = Math.abs(projectedStart.chainage - projectedEnd.chainage);
+        if (along < 40) continue;
+        if (straight > 0 && (along < straight * 0.75 || along > straight * 3)) continue;
+        const score = projectedStart.offset + projectedEnd.offset + Math.abs(along - straight) * 0.02;
+        if (!best || score < best.score) {
+          best = { track, startChain: projectedStart.chainage, endChain: projectedEnd.chainage, score };
+        }
+      }
     }
   }
-  if (!best) return [start, end];
+  if (!best) return snapOntoTracks(tracks, start, end);
   const low = Math.min(best.startChain, best.endChain);
   const high = Math.max(best.startChain, best.endChain);
   const coordinates = [pointAtChainage(best.track, low)];
@@ -280,6 +282,58 @@ function sliceTrack(tracks: number[][][], start: number[], end: number[]): numbe
   coordinates.push(pointAtChainage(best.track, high));
   if (best.startChain > best.endChain) coordinates.reverse();
   return coordinates;
+}
+
+function approaches(track: number[][], point: number[]): Array<{ chainage: number; offset: number }> {
+  const hits: Array<{ chainage: number; offset: number }> = [];
+  let chainage = 0;
+  for (let index = 1; index < track.length; index += 1) {
+    const start = track[index - 1];
+    const end = track[index];
+    const step = metersBetween(start, end);
+    const fraction = step === 0 ? 0 : closestFraction(point, start, end);
+    const projected = [
+      start[0] + (end[0] - start[0]) * fraction,
+      start[1] + (end[1] - start[1]) * fraction,
+    ];
+    const offset = metersBetween(point, projected);
+    if (offset <= 280) hits.push({ chainage: chainage + step * fraction, offset });
+    chainage += step;
+  }
+  hits.sort((left, right) => left.chainage - right.chainage);
+  const clustered: Array<{ chainage: number; offset: number }> = [];
+  for (const hit of hits) {
+    const previous = clustered[clustered.length - 1];
+    if (previous && hit.chainage - previous.chainage < 150) {
+      if (hit.offset < previous.offset) clustered[clustered.length - 1] = hit;
+    } else {
+      clustered.push(hit);
+    }
+  }
+  return clustered;
+}
+
+function snapOntoTracks(tracks: number[][][], start: number[], end: number[]): number[][] {
+  const steps = Math.max(2, Math.round(metersBetween(start, end) / 120));
+  return Array.from({ length: steps + 1 }, (_, index) => {
+    const fraction = index / steps;
+    return nearestOnTracks(tracks, [
+      start[0] + (end[0] - start[0]) * fraction,
+      start[1] + (end[1] - start[1]) * fraction,
+    ]);
+  });
+}
+
+function nearestOnTracks(tracks: number[][][], point: number[]): number[] {
+  let best = point;
+  let bestOffset = Infinity;
+  for (const track of tracks) {
+    const projected = project(track, point);
+    if (!projected || projected.offset >= bestOffset) continue;
+    bestOffset = projected.offset;
+    best = pointAtChainage(track, projected.chainage);
+  }
+  return best;
 }
 
 function project(track: number[][], point: number[]): { chainage: number; offset: number } | null {

@@ -42,6 +42,29 @@ test("places a train on the curved approach to its next station", () => {
   assert.ok(later[0] > point[0]);
 });
 
+test("keeps the train on the bowed track instead of the straight shortcut", () => {
+  const bowed: TrackLine = {
+    ...line,
+    tracks: [[
+      [114.1, 22.3],
+      [114.105, 22.306],
+      [114.11, 22.3],
+    ]],
+  };
+  const pair = stations.filter((station) => station.code !== "C");
+  const now = Date.parse("2026-11-21T10:35:00+08:00");
+  const segments = buildSegments([bowed], pair);
+  const [placed] = placeTrains([bowed], pair, segments, [{
+    line: "ISL",
+    station: "B",
+    direction: "UP",
+    dest: "B",
+    arrival: "2026-11-21 10:35:45",
+  }], now);
+  const point = trainCoordinate(placed, now);
+  assert.ok(point[1] > 22.302, `train lat ${point[1]} fell onto the straight shortcut`);
+});
+
 test("does not draw the same train again at a station it has not reached", () => {
   const now = Date.parse("2026-11-21T10:35:00+08:00");
   const segments = buildSegments([line], stations);
