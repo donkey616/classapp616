@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>香港智慧城市地圖</title>
+    <meta name="description" content="在香港地圖上看港鐵到站班次和運輸署交通快拍。" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <div>
+          <h1>香港智慧城市地圖</h1>
+          <p id="summary">正在準備地圖…</p>
+          <details>
+            <summary>資料來源</summary>
+            <ul>
+              <li>底圖是 OpenFreeMap 的 Positron，地圖資料來自 OpenStreetMap。</li>
+              <li>車站位置用地政總署港鐵站範圍的中心。</li>
+              <li>路綫和站名來自港鐵公開數據。到站班次在點選車站時向港鐵查詢。</li>
+              <li>交通快拍位置和照片來自運輸署，照片約每兩分鐘更新。</li>
+              <li>路線顏色是方便閱讀的慣用色，不是到站接口的欄位。</li>
+            </ul>
+            <p id="generated"></p>
+          </details>
+        </div>
+        <div class="toggles">
+          <button id="reset" type="button">全港</button>
+          <button id="toggle-mtr" type="button" class="toggle" aria-pressed="true">港鐵網絡</button>
+          <button id="toggle-cameras" type="button" class="toggle" aria-pressed="true">交通快拍</button>
+        </div>
+      </header>
+      <div id="stage">
+        <div id="map" role="region" aria-label="香港地圖"></div>
+        <div id="basemap-error" role="alert" hidden>
+          底圖暫時載入失敗。OpenFreeMap 沒有回應，請稍後重新整理。
+        </div>
+        <div id="legend"></div>
+        <p id="hint">點一個車站查看到站班次，點一個快拍點看最新照片。</p>
+        <aside id="panel" hidden aria-label="所選地點">
+          <div class="panel-bar">
+            <button id="panel-close" type="button">關閉</button>
+          </div>
+          <div id="panel-body"></div>
+        </aside>
+      </div>
+    </div>
+    <noscript>這幅地圖需要 JavaScript 才能顯示港鐵班次和交通快拍。</noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

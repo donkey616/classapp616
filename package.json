@@ -1,0 +1,23 @@
+{
+  "name": "hk-smart-city-map",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "data": "node scripts/build-network.mjs",
+    "verify": "node scripts/verify-network.mjs && node --experimental-strip-types --test test/*.test.ts",
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vite": "^6.0.3"
+  },
+  "dependencies": {
+    "maplibre-gl": "^6.19.0"
+  }
+}
