@@ -37,12 +37,14 @@ test("shows minutes, arriving now, and the Chinese destination", () => {
 test("keeps one empty direction at a terminus", () => {
   const view = parseSchedule("TCL", "東涌綫", "#F7941D", "TUC", {
     status: 1,
-    data: { "TCL-TUC": { UP: [], DOWN: [{ seq: "1", dest: "HOK", plat: "1", ttnt: "4", time: "2026-11-21 10:40:00", valid: "Y" }] } },
+    curr_time: "2026-11-21 10:36:00",
+    data: { "TCL-TUC": { UP: [], DOWN: [{ seq: "1", dest: "HOK", plat: "1", ttnt: "9", time: "2026-11-21 10:40:00", valid: "Y" }] } },
   }, { HOK: "香港" });
 
   assert.equal(view.bothEmpty, false);
   assert.equal(view.directions[0].empty, "這個方向暫時沒有班次。");
   assert.equal(view.directions[1].trains[0].destination, "香港");
+  assert.equal(view.directions[1].trains[0].when, "約 4 分鐘");
 });
 
 test("explains a station with no trains, including the racecourse", () => {
@@ -62,6 +64,7 @@ test("shows an East Rail via-racecourse departure", () => {
   const view = parseSchedule("EAL", "東鐵綫", "#53B7E8", "SHT", {
     status: 1,
     isdelay: "Y",
+    curr_time: "2026-11-21 10:37:00",
     data: {
       "EAL-SHT": {
         UP: [{ seq: "1", dest: "LOW", plat: "2", ttnt: "3", time: "2026-11-21 10:40:00", valid: "N", timeType: "D", route: "RAC" }],
@@ -93,9 +96,12 @@ test("shows the MTR alert and keeps only a safe link", () => {
   assert.equal(blocked.link, null);
 });
 
-test("arrival text rejects blank and negative values", () => {
-  assert.equal(arrivalText("0"), "即將到站");
-  assert.equal(arrivalText("12"), "約 12 分鐘");
-  assert.equal(arrivalText(""), "時間未提供");
-  assert.equal(arrivalText("-1"), "時間未提供");
+test("arrival text uses Hong Kong train time minus the response clock", () => {
+  const now = "2026-11-21 10:35:02";
+  assert.equal(arrivalText("2026-11-21 10:35:02", now), "即將到站");
+  assert.equal(arrivalText("2026-11-21 10:34:20", now), "即將到站");
+  assert.equal(arrivalText("2026-11-21 10:47:02", now), "約 12 分鐘");
+  assert.equal(arrivalText("", now), "時間未提供");
+  assert.equal(arrivalText("2026-11-21 10:47:02", "-"), "時間未提供");
+  assert.equal(arrivalText("2026-11-21T10:47:02Z", now), "時間未提供");
 });

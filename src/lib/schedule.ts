@@ -45,7 +45,12 @@ type Payload = {
   Isdelay?: string;
   curr_time?: string;
   sys_time?: string;
-  data?: Record<string, { UP?: TrainPayload[]; DOWN?: TrainPayload[] }>;
+  data?: Record<string, {
+    UP?: TrainPayload[];
+    DOWN?: TrainPayload[];
+    curr_time?: string;
+    sys_time?: string;
+  }>;
 };
 
 type TrainPayload = {
@@ -115,13 +120,17 @@ export function parseSchedule(
   }
 
   const node = body.data?.[`${lineCode}-${stationCode}`];
+  const currentTime = usableStamp(body.curr_time)
+    ?? usableStamp(body.sys_time)
+    ?? usableStamp(node?.curr_time)
+    ?? usableStamp(node?.sys_time);
   const titles = DIRECTION_TITLES[lineCode] ?? { UP: "上行", DOWN: "下行" };
   const directions = (["UP", "DOWN"] as const).map((side) => {
     const trains = [...(node?.[side] ?? [])].sort((a, b) => Number(a.seq ?? 0) - Number(b.seq ?? 0));
     return {
       title: titles[side],
       empty: trains.length === 0 ? "這個方向暫時沒有班次。" : null,
-      trains: trains.map((train) => toRow(train, names)),
+      trains: trains.map((train) => toRow(train, names, currentTime)),
     };
   });
   const bothEmpty = directions.every((direction) => direction.trains.length === 0);
@@ -134,7 +143,7 @@ export function parseSchedule(
   };
 }
 
-function toRow(train: TrainPayload, names: Record<string, string>): TrainRow {
+function toRow(train: TrainPayload, names: Record<string, string>, currentTime: string | null): TrainRow {
   const destinationCode = train.dest?.trim() || "";
   const notes: string[] = [];
   const timeType = train.timeType ?? train.timetype;
@@ -145,18 +154,33 @@ function toRow(train: TrainPayload, names: Record<string, string>): TrainRow {
   return {
     destination: destinationCode ? (names[destinationCode] ?? destinationCode) : "目的地未提供",
     platform: train.plat ? `月台 ${train.plat}` : "月台未提供",
-    when: arrivalText(train.ttnt),
+    when: arrivalText(train.time, currentTime ?? undefined),
     clock: clockStamp(train.time) ?? "",
     notes,
   };
 }
 
-export function arrivalText(ttnt: string | undefined): string {
-  if (ttnt == null || ttnt.trim() === "") return "時間未提供";
-  const minutes = Number(ttnt);
-  if (!Number.isInteger(minutes) || minutes < 0) return "時間未提供";
-  if (minutes === 0) return "即將到站";
+const HONG_KONG_OFFSET = "+08:00";
+
+export function arrivalText(trainTime: string | undefined, currentTime: string | undefined): string {
+  const trainMs = parseHongKongTime(trainTime);
+  const currentMs = parseHongKongTime(currentTime);
+  if (trainMs == null || currentMs == null) return "時間未提供";
+  const minutes = Math.round((trainMs - currentMs) / 60_000);
+  if (minutes <= 0) return "即將到站";
   return `約 ${minutes} 分鐘`;
+}
+
+function parseHongKongTime(value: string | undefined): number | null {
+  if (!value || value === "-") return null;
+  const match = value.trim().match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})$/);
+  if (!match) return null;
+  const parsed = Date.parse(`${match[1]}T${match[2]}${HONG_KONG_OFFSET}`);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function usableStamp(value: string | undefined): string | null {
+  return parseHongKongTime(value) == null ? null : value!.trim();
 }
 
 function clockStamp(value: string | undefined): string | null {

@@ -97,7 +97,7 @@ map.on("click", (event) => {
     void expandCluster(cluster);
     return;
   }
-  hidePanel();
+  dismissSelection();
 });
 
 map.on("mousemove", (event) => {
@@ -117,9 +117,9 @@ cameraToggle.addEventListener("click", () => {
   cameraToggle.setAttribute("aria-pressed", String(showCameras));
   applyVisibility();
 });
-onClose(() => hidePanel());
+onClose(() => dismissSelection());
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") hidePanel();
+  if (event.key === "Escape") dismissSelection();
 });
 
 void loadCameras()
@@ -288,6 +288,11 @@ function applyVisibility(): void {
   for (const id of CAMERA_LAYERS) {
     if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", cameraVisibility);
   }
+}
+
+function dismissSelection(): void {
+  ticket += 1;
+  hidePanel();
 }
 
 function showAll(duration: number): void {

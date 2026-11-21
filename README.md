@@ -24,7 +24,7 @@
 
 ## 本地預覽
 
-需要 Node.js 22 或以上。
+需要 Node.js 22.6.0 或以上。
 
 ```bash
 npm install
